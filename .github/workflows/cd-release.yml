@@ -1,0 +1,34 @@
+name: CD (Release Assets)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package compose file
+        run: |
+          mkdir -p dist
+          cp docker-compose.yml dist/
+          tar -czf camara-poc-integration-compose.tgz -C dist docker-compose.yml
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            camara-poc-integration-compose.tgz
+            dist/docker-compose.yml

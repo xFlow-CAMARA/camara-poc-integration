@@ -272,6 +272,7 @@ services:
       - ./coresim/artifacts/docker-compose/config/grafana/dashboards:/var/lib/grafana/dashboards/coresim
       - ./config/grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/default.yml
       - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/default.yml
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards/camara
       - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"
@@ -280,16 +281,18 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_INSTALL_PLUGINS=grafana-mongodb-datasource
     networks:
       - camara-net
     restart: unless-stopped
     depends_on:
       - coresim-prometheus
+      - mongodb
 
   # ======================= CAMARA PLATFORM =======================
   tf-sdk-api:
     build:
-      context: ./oop/tf-sdk
+      context: ./tf-sdk
       dockerfile: Dockerfile
     container_name: tf-sdk-api
     ports:
@@ -303,9 +306,10 @@ services:
       - NEF_LOCATION_BASE_URL=http://3gpp-monitoring-event:8080
       - NEF_TI_BASE_URL=http://3gpp-traffic-influence:8080
       - NEF_UE_IDENTITY_BASE_URL=http://ue-identity-service:8080
+      - MONGODB_URI=mongodb://mongodb:27017/camara
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./oop/tf-sdk:/app
+      - ./tf-sdk:/app
       - ./nef/config:/config
       - ./coresim/artifacts/docker-compose/config:/coresim-config
       - ./oai-core:/oai-core:ro
@@ -316,6 +320,7 @@ services:
     depends_on:
       - core-simulator
       - nef-ingress
+      - mongodb
     command: python api_server.py
 
   camara-dashboard:
@@ -330,12 +335,33 @@ services:
       - TF_SDK_URL=http://tf-sdk-api:8200
       - NEXT_PUBLIC_API_URL=http://tf-sdk-api:8200
       - NEXT_PUBLIC_GRAFANA_URL=http://grafana:3000
+      - MONGODB_URI=mongodb://mongodb:27017/camara
     networks:
       - camara-net
     restart: unless-stopped
     depends_on:
       - tf-sdk-api
       - grafana
+      - mongodb
+
+  mongodb:
+    image: mongo:7.0
+    container_name: camara-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=camara
+    volumes:
+      - mongodb-data:/data/db
+      - ./config/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - camara-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   camara-net:
@@ -345,3 +371,4 @@ networks:
 volumes:
   coresim-prometheus-data:
   grafana-data:
+  mongodb-data:

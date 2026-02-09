@@ -1,0 +1,85 @@
+name: Deploy (VM)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy stack on VM
+    runs-on: [self-hosted, camara-vm]
+    timeout-minutes: 30
+
+    env:
+      XFLOW_ROOT: /home/xflow
+      COMPOSE_FILE: /home/xflow/camara-poc-integration/docker-compose.yml
+      GIT_TERMINAL_PROMPT: "0"
+
+    steps:
+      - name: Preflight (docker + compose)
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+
+      - name: Preflight (expected directories)
+        run: |
+          set -euo pipefail
+          test -d "$XFLOW_ROOT"
+          test -f "$COMPOSE_FILE"
+
+          for d in camara-poc-integration coresim nef camara-dashboard tf-sdk config oai-core; do
+            if [ ! -d "$XFLOW_ROOT/$d" ]; then
+              echo "Missing required directory: $XFLOW_ROOT/$d" >&2
+              exit 1
+            fi
+          done
+
+      - name: Update repositories (fast-forward)
+        run: |
+          set -euo pipefail
+
+          update_repo() {
+            local dir="$1"
+            echo "--- Updating $dir"
+
+            if ! git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              echo "Not a git repository: $dir" >&2
+              exit 1
+            fi
+
+            if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+              echo "Repository has local changes; refusing to deploy: $dir" >&2
+              git -C "$dir" status --porcelain >&2
+              exit 1
+            fi
+
+            git -C "$dir" fetch --all --tags --prune
+            git -C "$dir" checkout main
+            git -C "$dir" pull --ff-only origin main
+          }
+
+          update_repo "$XFLOW_ROOT/camara-poc-integration"
+          update_repo "$XFLOW_ROOT/coresim"
+          update_repo "$XFLOW_ROOT/nef"
+          update_repo "$XFLOW_ROOT/camara-dashboard"
+          update_repo "$XFLOW_ROOT/tf-sdk"
+
+      - name: Deploy (compose up)
+        run: |
+          set -euo pipefail
+          cd "$XFLOW_ROOT"
+
+          docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+
+      - name: Show status
+        run: |
+          set -euo pipefail
+          cd "$XFLOW_ROOT"
+          docker compose -f "$COMPOSE_FILE" ps
