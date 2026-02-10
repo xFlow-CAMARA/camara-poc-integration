@@ -1,11 +1,11 @@
 services:
   # ======================= 5G CORE SIMULATOR =======================
   core-simulator:
-    build: ./coresim/core-simulator/
+    build: ../coresim/core-simulator/
     image: openexposure/coresim:local
     container_name: core-simulator
     volumes:
-      - ./coresim/artifacts/docker-compose/config/coreSim.yaml:/etc/config.yaml
+      - ../coresim/artifacts/docker-compose/config/coreSim.yaml:/etc/config.yaml
     ports:
       - "8080:8080"  # SBI API
       - "8081:8081"  # OAM API
@@ -21,7 +21,7 @@ services:
 
   # ======================= NEF NORTHBOUND SERVICES (3GPP APIs) =======================
   as-session-with-qos:
-    build: ./nef/as-session-with-qos/
+    build: ../nef/as-session-with-qos/
     container_name: 3gpp-as-session-with-qos
     image: openexposure/as-session-with-qos:local
     restart: unless-stopped
@@ -33,7 +33,7 @@ services:
     ports:
       - "8100:8080"
     volumes:
-      - ./nef/config/asSessionWithQos.yaml:/etc/config.yaml
+      - ../nef/config/asSessionWithQos.yaml:/etc/config.yaml
     networks:
       - camara-net
     depends_on:
@@ -42,7 +42,7 @@ services:
       - core-network-service
 
   traffic-influence:
-    build: ./nef/traffic-influence/
+    build: ../nef/traffic-influence/
     container_name: 3gpp-traffic-influence
     image: openexposure/traffic-influence:local
     restart: unless-stopped
@@ -54,7 +54,7 @@ services:
     ports:
       - "8101:8080"
     volumes:
-      - ./nef/config/trafficInfluence.yaml:/etc/config.yaml
+      - ../nef/config/trafficInfluence.yaml:/etc/config.yaml
     networks:
       - camara-net
     depends_on:
@@ -63,7 +63,7 @@ services:
       - core-network-service
 
   monitoring-event:
-    build: ./nef/monitoring-event/
+    build: ../nef/monitoring-event/
     container_name: 3gpp-monitoring-event
     image: openexposure/monitoring-event:local
     restart: unless-stopped
@@ -75,7 +75,7 @@ services:
     ports:
       - "8102:8080"
     volumes:
-      - ./nef/config/monitoringEvent.yaml:/etc/config.yaml
+      - ../nef/config/monitoringEvent.yaml:/etc/config.yaml
     networks:
       - camara-net
     depends_on:
@@ -84,7 +84,7 @@ services:
       - core-network-service
 
   ue-id:
-    build: ./nef/ue-id/
+    build: ../nef/ue-id/
     container_name: 3gpp-ueid
     image: openexposure/ue-id:local
     restart: unless-stopped
@@ -94,14 +94,14 @@ services:
       timeout: 5s
       retries: 5
     volumes:
-      - ./nef/config/ueId.yaml:/etc/config.yaml
+      - ../nef/config/ueId.yaml:/etc/config.yaml
     networks:
       - camara-net
     depends_on:
       - ue-identity
 
   ue-address:
-    build: ./nef/ue-address/
+    build: ../nef/ue-address/
     container_name: 3gpp-ue-address
     image: openexposure/ue-address:local
     restart: unless-stopped
@@ -111,7 +111,7 @@ services:
       timeout: 5s
       retries: 5
     volumes:
-      - ./nef/config/ueAddress.yaml:/etc/config.yaml
+      - ../nef/config/ueAddress.yaml:/etc/config.yaml
     networks:
       - camara-net
     depends_on:
@@ -119,7 +119,7 @@ services:
 
   # ======================= NEF MIDDLEWARE SERVICES =======================
   ue-profile:
-    build: ./nef/ue-profile-service/
+    build: ../nef/ue-profile-service/
     container_name: ue-profile-service
     image: openexposure/ue-profile-service:local
     environment:
@@ -136,7 +136,7 @@ services:
       - redis
 
   ue-identity:
-    build: ./nef/ue-identity-service/
+    build: ../nef/ue-identity-service/
     container_name: ue-identity-service
     image: openexposure/ue-identity-service:local
     environment:
@@ -150,7 +150,7 @@ services:
       - redis
 
   dataset-exporter:
-    build: ./nef/dataset-exporter/
+    build: ../nef/dataset-exporter/
     container_name: dataset-exporter
     image: openexposure/dataset-exporter:local
     environment:
@@ -165,7 +165,7 @@ services:
 
   # ======================= CAPIF SERVICE REGISTRY =======================
   capif-service:
-    build: ./nef/capif-service/
+    build: ../nef/capif-service/
     container_name: capif-service
     image: openexposure/capif-service:local
     ports:
@@ -186,7 +186,7 @@ services:
 
   # ======================= NEF SOUTHBOUND SERVICES =======================
   core-network-service:
-    build: ./nef/core-network-service/
+    build: ../nef/core-network-service/
     container_name: core-network-service
     image: openexposure/core-network-service:local
     ports:
@@ -215,7 +215,7 @@ services:
       - "8082:80"
       - "8443:443"
     volumes:
-      - ./nef/config/ingress.conf:/etc/nginx/conf.d/default.conf
+      - ../nef/config/ingress.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - as-session-with-qos
       - traffic-influence
@@ -252,7 +252,7 @@ services:
     image: prom/prometheus:latest
     container_name: coresim-prometheus
     volumes:
-      - ./coresim/artifacts/docker-compose/config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ../coresim/artifacts/docker-compose/config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - coresim-prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -269,10 +269,10 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     volumes:
-      - ./coresim/artifacts/docker-compose/config/grafana/dashboards:/var/lib/grafana/dashboards/coresim
-      - ./config/grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/default.yml
-      - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/default.yml
-      - ./config/grafana/dashboards:/var/lib/grafana/dashboards/camara
+      - ../coresim/artifacts/docker-compose/config/grafana/dashboards:/var/lib/grafana/dashboards/coresim
+      - ../config/grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/default.yml
+      - ../config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/default.yml
+      - ../config/grafana/dashboards:/var/lib/grafana/dashboards/camara
       - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"
@@ -292,7 +292,7 @@ services:
   # ======================= CAMARA PLATFORM =======================
   tf-sdk-api:
     build:
-      context: ./tf-sdk
+      context: ../tf-sdk
       dockerfile: Dockerfile
     container_name: tf-sdk-api
     ports:
@@ -309,10 +309,10 @@ services:
       - MONGODB_URI=mongodb://mongodb:27017/camara
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./tf-sdk:/app
-      - ./nef/config:/config
-      - ./coresim/artifacts/docker-compose/config:/coresim-config
-      - ./oai-core:/oai-core:ro
+      - ../tf-sdk:/app
+      - ../nef/config:/config
+      - ../coresim/artifacts/docker-compose/config:/coresim-config
+      - ../oai-core:/oai-core:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - camara-net
@@ -325,7 +325,7 @@ services:
 
   camara-dashboard:
     build:
-      context: ./camara-dashboard
+      context: ../camara-dashboard
       dockerfile: Dockerfile
     container_name: camara-dashboard
     ports:
@@ -353,7 +353,7 @@ services:
       - MONGO_INITDB_DATABASE=camara
     volumes:
       - mongodb-data:/data/db
-      - ./config/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ../config/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     networks:
       - camara-net
     restart: unless-stopped
