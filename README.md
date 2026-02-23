@@ -43,12 +43,20 @@ That means the VM should have:
 - Follow the Linux instructions on the VM.
 - Add the runner label `camara-vm` (the deploy workflow requires it).
 
+Tip: when you run `./config.sh`, include `--labels camara-vm`.
+
 ### 2) Ensure VM prerequisites
 
 - Docker Engine installed
 - Docker Compose v2 available (`docker compose version`)
 - The directory layout above exists under `/home/xflow`
 - The runner user can run Docker (typically by being in the `docker` group)
+
+You can validate prerequisites on the VM by running:
+
+```bash
+bash /home/xflow/camara-poc-integration/scripts/vm_runner_preflight.sh
+```
 
 ### 3) Run the deploy workflow
 

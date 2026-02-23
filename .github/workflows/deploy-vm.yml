@@ -22,6 +22,11 @@ jobs:
       GIT_TERMINAL_PROMPT: "0"
 
     steps:
+      - name: Preflight (runner prerequisites)
+        run: |
+          set -euo pipefail
+          bash /home/xflow/camara-poc-integration/scripts/vm_runner_preflight.sh
+
       - name: Preflight (docker + compose)
         run: |
           set -euo pipefail
