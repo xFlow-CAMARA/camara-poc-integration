@@ -27,6 +27,16 @@ docker compose -f camara-poc-integration/docker-compose.yml up -d --build
 
 This repo includes a GitHub Actions workflow that can deploy the stack **on the VM itself** using a **self-hosted runner**.
 
+### GitHub Actions cost note
+
+All CI/CD workflows across the CAMARA repos are configured to run on the VM runner label `camara-vm` (self-hosted) to avoid GitHub-hosted Actions minutes charges.
+
+That means the VM should have:
+- Docker Engine + Docker Compose v2
+- `git`
+- Enough disk space for Docker builds/images
+- Outbound internet access to GitHub (for `actions/checkout` and setup actions)
+
 ### 1) Install a self-hosted GitHub Actions runner on the VM
 
 - On GitHub: repo → **Settings** → **Actions** → **Runners** → **New self-hosted runner**
