@@ -1,0 +1,146 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: camara-api
+    url: http://tf-sdk-api:8200
+    connect_timeout: 10000
+    read_timeout: 60000
+    write_timeout: 60000
+    routes:
+      - name: quality-on-demand
+        paths:
+          - /quality-on-demand
+        strip_path: false
+      - name: location-retrieval
+        paths:
+          - /location-retrieval
+        strip_path: false
+      - name: traffic-influence
+        paths:
+          - /traffic-influence
+        strip_path: false
+      - name: number-verification
+        paths:
+          - /number-verification
+        strip_path: false
+      - name: device-status
+        paths:
+          - /device-status
+          - /device-reachability-status
+        strip_path: false
+      - name: sim-swap
+        paths:
+          - /sim-swap
+        strip_path: false
+      - name: camara-admin
+        paths:
+          - /api
+          - /services
+          - /health
+          - /metrics
+          - /logs
+          - /core-logs
+        strip_path: false
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3100"
+        - "http://localhost:8000"
+        - "http://localhost:3000"
+        - "http://camara-dashboard:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Content-Type
+        - Authorization
+        - X-API-Key
+        - x-correlator
+      exposed_headers:
+        - x-correlator
+      max_age: 3600
+
+  - name: correlation-id
+    config:
+      header_name: x-correlator
+      generator: uuid#counter
+      echo_downstream: true
+
+  - name: prometheus
+
+  - name: rate-limiting
+    config:
+      minute: 100
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
+
+  # ── OAuth 2.0 token enforcement (Keycloak) ─────────────────────────────────
+  # Validates Bearer tokens issued by Keycloak via token introspection.
+  # Admin/health routes (camara-admin) are excluded by path prefix check.
+  # Scope must match the requested CAMARA API name (e.g. quality-on-demand).
+  - name: pre-function
+    config:
+      access:
+        - |
+          local function validate_token()
+            local path = kong.request.get_path()
+            local skip = {"/api", "/services", "/health", "/metrics", "/logs", "/core-logs"}
+            for _, p in ipairs(skip) do
+              if path:sub(1, #p) == p then return end
+            end
+            if path:find("/demo/", 1, true) or path:sub(-5) == "/demo" then return end
+
+            local auth = kong.request.get_header("authorization")
+            if not auth then
+              return kong.response.exit(401, {error = "Authorization header required"})
+            end
+            local token = auth:match("^[Bb]earer (.+)$")
+            if not token then
+              return kong.response.exit(401, {error = "Bearer token required"})
+            end
+
+            local http = require("resty.http").new()
+            local res, err = http:request_uri(
+              "http://keycloak:8080/realms/camara/protocol/openid-connect/token/introspect",
+              {
+                method  = "POST",
+                headers = {["Content-Type"] = "application/x-www-form-urlencoded"},
+                body    = "token=" .. token
+                       .. "&client_id=camara-client"
+                       .. "&client_secret=camara-secret-2026",
+              }
+            )
+            if err or not res then
+              kong.log.err("Keycloak introspect error: ", err)
+              return kong.response.exit(503, {error = "Auth service unavailable"})
+            end
+
+            local cjson = require("cjson")
+            local ok, body = pcall(cjson.decode, res.body)
+            if not ok or not body.active then
+              return kong.response.exit(403, {error = "Invalid or expired token"})
+            end
+
+            local api = path:match("^/([^/]+)")
+            if api and body.scope then
+              local granted = false
+              for s in body.scope:gmatch("%S+") do
+                if s == api then granted = true; break end
+              end
+              if not granted then
+                return kong.response.exit(403, {error = "Token scope does not cover " .. api})
+              end
+            end
+
+            kong.service.request.set_header("X-Client-Id",    body.client_id or "")
+            kong.service.request.set_header("X-Token-Scope",  body.scope or "")
+          end
+          validate_token()

@@ -1,0 +1,172 @@
+{
+  "realm": "camara",
+  "enabled": true,
+  "sslRequired": "none",
+  "defaultSignatureAlgorithm": "RS256",
+  "clientScopes": [
+    {
+      "name": "quality-on-demand",
+      "description": "CAMARA Quality on Demand API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "location-retrieval",
+      "description": "CAMARA Location Retrieval API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "traffic-influence",
+      "description": "CAMARA Traffic Influence API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "number-verification",
+      "description": "CAMARA Number Verification API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "device-status",
+      "description": "CAMARA Device Status API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "device-reachability-status",
+      "description": "CAMARA Device Reachability Status API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "sim-swap",
+      "description": "CAMARA SIM Swap API",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "camara-client",
+      "name": "CAMARA API Client",
+      "description": "OAuth 2.0 client for CAMARA API access (client_credentials grant)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "camara-secret-2026",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "quality-on-demand",
+        "location-retrieval",
+        "traffic-influence",
+        "number-verification",
+        "device-status",
+        "device-reachability-status",
+        "sim-swap"
+      ]
+    },
+    {
+      "clientId": "camara-dashboard-app",
+      "name": "CAMARA Dashboard (developer portal)",
+      "description": "OIDC client for the Next.js dashboard — Authorization Code + PKCE",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dashboard-secret-2026",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:3100",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:3100/api/auth/callback/keycloak",
+        "http://localhost:3100/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3100",
+        "+"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:3100/*"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins"
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Operator who can approve / reject invoker registrations"
+      },
+      {
+        "name": "developer",
+        "description": "Application developer registering for CAMARA API access"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@xflow.local",
+      "firstName": "Operator",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "dev",
+      "email": "dev@xflow.local",
+      "firstName": "Demo",
+      "lastName": "Developer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev123", "temporary": false }
+      ],
+      "realmRoles": ["developer"]
+    }
+  ],
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "defaultRoles": ["developer"]
+}

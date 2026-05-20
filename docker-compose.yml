@@ -163,27 +163,6 @@ services:
     depends_on:
       - redis
 
-  # ======================= CAPIF SERVICE REGISTRY =======================
-  capif-service:
-    build: ../nef/capif-service/
-    container_name: capif-service
-    image: openexposure/capif-service:local
-    ports:
-      - "8300:8080"
-    environment:
-      - CAPIF_FQDN=capif.etsi.org
-      - CAPIF_AUTH_PORT=8080
-      - CAPIF_USERNAME=
-      - CAPIF_PASSWORD=
-      - INGRESS_FQDN=
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - camara-net
-
   # ======================= NEF SOUTHBOUND SERVICES =======================
   core-network-service:
     build: ../nef/core-network-service/
@@ -270,9 +249,9 @@ services:
     container_name: grafana
     volumes:
       - ../coresim/artifacts/docker-compose/config/grafana/dashboards:/var/lib/grafana/dashboards/coresim
-      - ../config/grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/default.yml
-      - ../config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/default.yml
-      - ../config/grafana/dashboards:/var/lib/grafana/dashboards/camara
+      - ./config/grafana/dashboard.yml:/etc/grafana/provisioning/dashboards/default.yml
+      - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/default.yml
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards/camara
       - grafana-data:/var/lib/grafana
     ports:
       - "3000:3000"
@@ -288,6 +267,32 @@ services:
     depends_on:
       - coresim-prometheus
       - mongodb
+
+  # ======================= IDENTITY & ACCESS MANAGEMENT =======================
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    command: start-dev --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HTTP_PORT=8080
+      - KC_HEALTH_ENABLED=true
+      - KC_HOSTNAME_URL=http://keycloak:8080
+      - KC_HOSTNAME_ADMIN_URL=http://keycloak:8080
+    volumes:
+      - ./config/keycloak/camara-realm.json:/opt/keycloak/data/import/camara-realm.json
+    ports:
+      - "8180:8080"
+    networks:
+      - camara-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   # ======================= CAMARA PLATFORM =======================
   tf-sdk-api:
@@ -323,6 +328,35 @@ services:
       - mongodb
     command: python api_server.py
 
+  kong:
+    image: kong:3.9
+    container_name: kong-gateway
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/etc/kong/kong.yaml
+      - KONG_PROXY_LISTEN=0.0.0.0:8000
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+      - KONG_PLUGINS=bundled
+      - KONG_LOG_LEVEL=warn
+      - KONG_UNTRUSTED_LUA=on
+      - KONG_UNTRUSTED_LUA_SANDBOX_REQUIRES=resty.http,cjson
+    volumes:
+      - ./config/kong/kong.yaml:/etc/kong/kong.yaml:ro
+    ports:
+      - "8000:8000"   # Kong proxy (CAMARA API entry point)
+      - "8001:8001"   # Kong Admin API
+    networks:
+      - camara-net
+    depends_on:
+      - tf-sdk-api
+      - keycloak
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   camara-dashboard:
     build:
       context: ../camara-dashboard
@@ -332,17 +366,26 @@ services:
       - "3100:3000"
     environment:
       - NODE_ENV=production
-      - TF_SDK_URL=http://tf-sdk-api:8200
-      - NEXT_PUBLIC_API_URL=http://tf-sdk-api:8200
+      - TF_SDK_URL=http://kong-gateway:8000
+      - NEXT_PUBLIC_API_URL=http://kong-gateway:8000
       - NEXT_PUBLIC_GRAFANA_URL=http://grafana:3000
       - MONGODB_URI=mongodb://mongodb:27017/camara
+      - INVOKER_ONBOARDING_URL=http://invoker-onboarding:8080
+      - NEXTAUTH_URL=http://localhost:3100
+      - NEXTAUTH_SECRET=camara-portal-secret-2026
+      - KEYCLOAK_INTERNAL_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=camara
+      - KEYCLOAK_CLIENT_ID=camara-dashboard-app
+      - KEYCLOAK_CLIENT_SECRET=dashboard-secret-2026
+      - KONG_INTERNAL_URL=http://kong-gateway:8000
     networks:
       - camara-net
     restart: unless-stopped
     depends_on:
-      - tf-sdk-api
+      - kong
       - grafana
       - mongodb
+      - invoker-onboarding
 
   mongodb:
     image: mongo:7.0
@@ -353,7 +396,7 @@ services:
       - MONGO_INITDB_DATABASE=camara
     volumes:
       - mongodb-data:/data/db
-      - ../config/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./config/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     networks:
       - camara-net
     restart: unless-stopped
@@ -363,10 +406,71 @@ services:
       timeout: 5s
       retries: 5
 
+  # ======================= CAPIF PROVIDER SERVICE =======================
+  capif-service:
+    build:
+      context: ../nef/capif-service
+      dockerfile: Dockerfile
+    container_name: capif-service
+    ports:
+      - "8091:8080"
+    environment:
+      - CAPIF_FQDN=capifcore
+      - CAPIF_AUTH_PORT=443
+      - CAPIF_USERNAME=nef-xflow
+      - CAPIF_PASSWORD=xflow-nef-2026
+      - INGRESS_FQDN=nef-ingress-controller:80
+    networks:
+      - camara-net
+      - capif-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ======================= DEVELOPER PORTAL =======================
+  invoker-onboarding:
+    build:
+      context: ../nef/invoker-onboarding
+      dockerfile: Dockerfile
+    container_name: invoker-onboarding
+    ports:
+      - "8090:8080"
+    environment:
+      - CAPIF_CORE_URL=https://nginx:443
+      - CAPIF_REGISTER_URL=https://register:8080
+      - CAPIF_USERNAME=nef-xflow
+      - CAPIF_PASSWORD=xflow-nef-2026
+      - CAPIF_SERVICE_URL=http://capif-service:8080
+      - MONGODB_URI=mongodb://camara-mongodb:27017/camara
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=camara
+      - KEYCLOAK_ADMIN_USERNAME=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - CAPIF_REDIS_URL=redis://services-redis-1:6379/0
+    networks:
+      - camara-net
+      - capif-network
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - keycloak
+      - capif-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
 networks:
   camara-net:
     driver: bridge
     name: xflow
+  capif-network:
+    external: true
+    name: capif-network
 
 volumes:
   coresim-prometheus-data:

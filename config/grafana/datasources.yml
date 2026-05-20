@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    url: http://coresim-prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: MongoDB
+    type: grafana-mongodb-datasource
+    url: mongodb://mongodb:27017
+    editable: false
+    jsonData:
+      database: camara
