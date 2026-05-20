@@ -39,9 +39,12 @@ db.api_subscriptions.createIndex({ invoker_id: 1, api_name: 1 }, { unique: true 
 db.api_subscriptions.createIndex({ status: 1 });
 db.api_subscriptions.createIndex({ submitted_at: -1 });
 
-// audit_logs: immutable record of every governance action
+// audit_logs: immutable record of every governance action.
+// TTL: 2 years — Mongo auto-expires rows older than this. Without it the
+// collection grows forever and dominates storage cost in long-lived deployments.
 db.createCollection('audit_logs');
 db.audit_logs.createIndex({ timestamp: -1 });
+db.audit_logs.createIndex({ timestamp: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 730 });
 db.audit_logs.createIndex({ invoker_id: 1, timestamp: -1 });
 db.audit_logs.createIndex({ action: 1, timestamp: -1 });
 
