@@ -371,6 +371,7 @@ services:
       - NEXT_PUBLIC_GRAFANA_URL=http://grafana:3000
       - MONGODB_URI=mongodb://mongodb:27017/camara
       - INVOKER_ONBOARDING_URL=http://invoker-onboarding:8080
+      - APP_ENV=${APP_ENV:-dev}
       - NEXTAUTH_URL=http://localhost:3100
       - NEXTAUTH_SECRET=camara-portal-secret-2026
       - KEYCLOAK_INTERNAL_URL=http://keycloak:8080
@@ -378,6 +379,7 @@ services:
       - KEYCLOAK_CLIENT_ID=camara-dashboard-app
       - KEYCLOAK_CLIENT_SECRET=dashboard-secret-2026
       - KONG_INTERNAL_URL=http://kong-gateway:8000
+      - INVOKER_ADMIN_API_KEY=${INVOKER_ADMIN_API_KEY:-}
     networks:
       - camara-net
     restart: unless-stopped
@@ -439,17 +441,20 @@ services:
     ports:
       - "8090:8080"
     environment:
+      - APP_ENV=${APP_ENV:-dev}
       - CAPIF_CORE_URL=https://nginx:443
       - CAPIF_REGISTER_URL=https://register:8080
       - CAPIF_USERNAME=nef-xflow
       - CAPIF_PASSWORD=xflow-nef-2026
       - CAPIF_SERVICE_URL=http://capif-service:8080
+      - CAPIF_TLS_VERIFY=${CAPIF_TLS_VERIFY:-false}
       - MONGODB_URI=mongodb://camara-mongodb:27017/camara
       - KEYCLOAK_URL=http://keycloak:8080
       - KEYCLOAK_REALM=camara
       - KEYCLOAK_ADMIN_USERNAME=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
       - CAPIF_REDIS_URL=redis://services-redis-1:6379/0
+      - INVOKER_ADMIN_API_KEY=${INVOKER_ADMIN_API_KEY:-}
     networks:
       - camara-net
       - capif-network
