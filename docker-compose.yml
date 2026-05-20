@@ -378,7 +378,9 @@ services:
       - KEYCLOAK_REALM=camara
       - KEYCLOAK_CLIENT_ID=camara-dashboard-app
       - KEYCLOAK_CLIENT_SECRET=dashboard-secret-2026
-      - KONG_INTERNAL_URL=http://kong-gateway:8000
+      # KONG_INTERNAL_URL is read by /api/developer/try; the code default
+      # (http://kong-gateway:8000) matches this compose hostname, so it's
+      # only set explicitly when overriding (e.g. running outside Docker).
       - INVOKER_ADMIN_API_KEY=${INVOKER_ADMIN_API_KEY:-}
       - INVOKER_DEV_API_KEY=${INVOKER_DEV_API_KEY:-}
     networks:
