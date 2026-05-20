@@ -380,6 +380,7 @@ services:
       - KEYCLOAK_CLIENT_SECRET=dashboard-secret-2026
       - KONG_INTERNAL_URL=http://kong-gateway:8000
       - INVOKER_ADMIN_API_KEY=${INVOKER_ADMIN_API_KEY:-}
+      - INVOKER_DEV_API_KEY=${INVOKER_DEV_API_KEY:-}
     networks:
       - camara-net
     restart: unless-stopped
@@ -455,6 +456,7 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=admin
       - CAPIF_REDIS_URL=redis://services-redis-1:6379/0
       - INVOKER_ADMIN_API_KEY=${INVOKER_ADMIN_API_KEY:-}
+      - INVOKER_DEV_API_KEY=${INVOKER_DEV_API_KEY:-}
     networks:
       - camara-net
       - capif-network
