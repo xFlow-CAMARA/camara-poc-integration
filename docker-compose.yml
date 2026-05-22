@@ -261,6 +261,10 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_INSTALL_PLUGINS=grafana-mongodb-datasource
+      # Serve under /grafana so the dashboard can proxy it on its own
+      # origin; one SSH-tunneled port reaches Grafana via /grafana/*.
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     networks:
       - camara-net
     restart: unless-stopped
