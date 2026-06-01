@@ -1,0 +1,387 @@
+# free5GC docker compose – CAMARA PoC Integration
+#
+# Uses official pre-built free5gc v4.2.2 images.
+#
+# Networks:
+#   privnet    – private NF-to-NF SBI traffic (10.100.200.0/24)
+#   camara-net – shared with the CAMARA stack (name: xflow); NEF + WebUI exposed here
+#
+# Usage (from camara-poc-integration/):
+#   # Core NFs only:
+#   docker compose -f docker-compose.free5gc.yml up -d
+#
+#   # With UPF (needs gtp5g kernel module on the host):
+#   sudo modprobe gtp5g
+#   docker compose -f docker-compose.free5gc.yml --profile upf up -d
+#
+#   # Full CAMARA stack + free5GC:
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.free5gc.yml up -d
+
+services:
+
+  # ═══════════════════════════════════════════════════════════════════
+  # DATA STORE
+  # ═══════════════════════════════════════════════════════════════════
+
+  db:
+    container_name: free5gc-mongo
+    image: mongo:7.0
+    command: mongod --port 27017
+    expose:
+      - "27017"
+    volumes:
+      - free5gc-mongo-data:/data/db
+    networks:
+      privnet:
+        aliases:
+          - db
+    ports:
+      - "27018:27017"    # offset to avoid conflicts with other stacks
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ═══════════════════════════════════════════════════════════════════
+  # NRF  —  NF Registration and Discovery
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-nrf:
+    container_name: free5gc-nrf
+    image: free5gc/nrf:v4.2.2
+    command: ./nrf -c ./config/nrfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/nrfcfg.yaml:/free5gc/config/nrfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      DB_URI: mongodb://db/free5gc
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - nrf.free5gc.org
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nrf.free5gc.org 8000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ═══════════════════════════════════════════════════════════════════
+  # DATA LAYER  (UDR → UDM → AUSF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-udr:
+    container_name: free5gc-udr
+    image: free5gc/udr:v4.2.2
+    command: ./udr -c ./config/udrcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/udrcfg.yaml:/free5gc/config/udrcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      DB_URI: mongodb://db/free5gc
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - udr.free5gc.org
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+
+  free5gc-udm:
+    container_name: free5gc-udm
+    image: free5gc/udm:v4.2.2
+    command: ./udm -c ./config/udmcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/udmcfg.yaml:/free5gc/config/udmcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - udm.free5gc.org
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+
+  free5gc-ausf:
+    container_name: free5gc-ausf
+    image: free5gc/ausf:v4.2.2
+    command: ./ausf -c ./config/ausfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/ausfcfg.yaml:/free5gc/config/ausfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - ausf.free5gc.org
+    depends_on:
+      free5gc-nrf:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════
+  # POLICY  (PCF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-pcf:
+    container_name: free5gc-pcf
+    image: free5gc/pcf:v4.2.2
+    command: ./pcf -c ./config/pcfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/pcfcfg.yaml:/free5gc/config/pcfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      DB_URI: mongodb://db/free5gc
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - pcf.free5gc.org
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════
+  # SLICE SELECTION  (NSSF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-nssf:
+    container_name: free5gc-nssf
+    image: free5gc/nssf:v4.2.2
+    command: ./nssf -c ./config/nssfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/nssfcfg.yaml:/free5gc/config/nssfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - nssf.free5gc.org
+    depends_on:
+      free5gc-nrf:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════
+  # ACCESS AND MOBILITY  (AMF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-amf:
+    container_name: free5gc-amf
+    image: free5gc/amf:v4.2.2
+    command: ./amf -c ./config/amfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/amfcfg.yaml:/free5gc/config/amfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    networks:
+      privnet:
+        ipv4_address: 10.100.200.16
+        aliases:
+          - amf.free5gc.org
+    depends_on:
+      free5gc-nrf:
+        condition: service_healthy
+      free5gc-ausf:
+        condition: service_started
+      free5gc-nssf:
+        condition: service_started
+
+  # ═══════════════════════════════════════════════════════════════════
+  # SESSION MANAGEMENT  (SMF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-smf:
+    container_name: free5gc-smf
+    image: free5gc/smf:v4.2.2
+    command: ./smf -c ./config/smfcfg.yaml -u ./config/uerouting.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/smfcfg.yaml:/free5gc/config/smfcfg.yaml
+      - ./config/uerouting.yaml:/free5gc/config/uerouting.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - smf.free5gc.org
+    depends_on:
+      free5gc-nrf:
+        condition: service_healthy
+      free5gc-pcf:
+        condition: service_started
+      free5gc-udm:
+        condition: service_started
+
+  # ═══════════════════════════════════════════════════════════════════
+  # CHARGING  (CHF)
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-chf:
+    container_name: free5gc-chf
+    image: free5gc/chf:v4.2.2
+    command: ./chf -c ./config/chfcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/chfcfg.yaml:/free5gc/config/chfcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      DB_URI: mongodb://db/free5gc
+      GIN_MODE: release
+    networks:
+      privnet:
+        aliases:
+          - chf.free5gc.org
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+
+  # ═══════════════════════════════════════════════════════════════════
+  # UPF  (optional — needs gtp5g kernel module on the host)
+  # Enable with: docker compose --profile upf up
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-upf:
+    container_name: free5gc-upf
+    image: free5gc/upf:v4.2.2
+    command: bash -c "./upf-iptables.sh && ./upf -c ./config/upfcfg.yaml"
+    volumes:
+      - ./config/upfcfg.yaml:/free5gc/config/upfcfg.yaml
+      - ./config/upf-iptables.sh:/free5gc/upf-iptables.sh
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    networks:
+      privnet:
+        aliases:
+          - upf.free5gc.org
+    profiles:
+      - upf
+
+  # ═══════════════════════════════════════════════════════════════════
+  # NEF  —  free5GC's built-in Network Exposure Function
+  #
+  # Exposes /3gpp-traffic-influence/v1  ← used by TF-SDK
+  # TF-SDK connects via FREE5GC_NEF_URL=http://free5gc-nef:8000
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-nef:
+    container_name: free5gc-nef
+    image: free5gc/nef:v4.2.2
+    command: ./nef -c ./config/nefcfg.yaml
+    expose:
+      - "8000"
+    volumes:
+      - ./config/nefcfg.yaml:/free5gc/config/nefcfg.yaml
+      - ./cert:/free5gc/cert
+    environment:
+      GIN_MODE: release
+    ports:
+      - "29505:8000"    # host port for direct access; TF-SDK uses container name
+    networks:
+      privnet:
+        aliases:
+          - nef.free5gc.org
+      camara-net:       # exposed to TF-SDK on the shared CAMARA network
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+      free5gc-udr:
+        condition: service_started
+      free5gc-udm:
+        condition: service_started
+      free5gc-pcf:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z nef.free5gc.org 8000"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  # ═══════════════════════════════════════════════════════════════════
+  # WEBCONSOLE  —  Subscriber management UI
+  # Accessible at http://localhost:5001
+  # ═══════════════════════════════════════════════════════════════════
+
+  free5gc-webui:
+    container_name: free5gc-webui
+    image: free5gc/webui:v4.2.2
+    command: ./webui -c ./config/webuicfg.yaml
+    volumes:
+      - ./config/webuicfg.yaml:/free5gc/config/webuicfg.yaml
+    environment:
+      - GIN_MODE=release
+    networks:
+      privnet:
+        aliases:
+          - webui
+      camara-net:
+    ports:
+      - "5001:5000"
+      - "2122:2122"
+      - "2121:2121"
+    depends_on:
+      db:
+        condition: service_healthy
+      free5gc-nrf:
+        condition: service_healthy
+
+# ─── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  privnet:
+    name: free5gc-privnet
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.100.200.0/24
+    driver_opts:
+      com.docker.network.bridge.name: br-free5gc
+
+  camara-net:
+    external: true
+    name: xflow       # created by docker-compose.yml (main CAMARA stack)
+                      # Pre-create if running standalone: docker network create xflow
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  free5gc-mongo-data:
+    name: free5gc-mongo-data

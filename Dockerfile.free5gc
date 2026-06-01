@@ -1,0 +1,137 @@
+# free5GC multi-stage Dockerfile
+#
+# Builds every control-plane NF (nrf amf smf udr udm ausf pcf nssf nef)
+# and the WebUI from source, then packages each into a minimal Alpine
+# runtime image.
+#
+# Build context: ../free5gc   (the free5gc repo root)
+# Usage from docker-compose:
+#   build:
+#     context: ../free5gc
+#     dockerfile: ../camara-poc-integration/Dockerfile.free5gc
+#     target: nef          # one of: nrf amf smf udr udm ausf pcf nssf nef webui
+
+# ─── Stage 1: Go NF builder ──────────────────────────────────────────────────
+FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates gcc musl-dev
+
+WORKDIR /free5gc
+
+# Copy each NF source tree; each is a self-contained Go module (submodule).
+COPY NFs/nrf  ./NFs/nrf
+COPY NFs/amf  ./NFs/amf
+COPY NFs/smf  ./NFs/smf
+COPY NFs/udr  ./NFs/udr
+COPY NFs/udm  ./NFs/udm
+COPY NFs/ausf ./NFs/ausf
+COPY NFs/pcf  ./NFs/pcf
+COPY NFs/nssf ./NFs/nssf
+COPY NFs/nef  ./NFs/nef
+
+RUN mkdir -p /out
+
+# Build each NF binary.
+# The Makefile CDs to NFs/{nf}/cmd/ so Go resolves the parent go.mod.
+RUN for nf in nrf amf smf udr udm ausf pcf nssf nef; do \
+      echo "==> Building $nf" && \
+      cd /free5gc/NFs/$nf/cmd && \
+      CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags="-s -w" \
+        -o /out/$nf \
+        main.go && \
+      cd /free5gc; \
+    done
+
+# ─── Stage 2: WebUI – React frontend ─────────────────────────────────────────
+FROM node:22-alpine AS web-frontend
+
+WORKDIR /webconsole/frontend
+
+# Copy all source first so any .yarnrc.yml / .npmrc present in the repo is
+# respected, then install and build in a single layer.
+COPY webconsole/frontend/ ./
+
+RUN npm install && npm run build
+
+# ─── Stage 3: WebUI – Go backend ─────────────────────────────────────────────
+FROM golang:1.26-alpine AS webconsole-builder
+
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /webconsole
+
+COPY webconsole .
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -ldflags="-s -w" \
+      -o /out/webconsole \
+      ./server.go
+
+# ─── Shared runtime base ──────────────────────────────────────────────────────
+FROM alpine:3.20 AS runtime-base
+
+RUN apk add --no-cache ca-certificates curl && \
+    addgroup -S free5gc && \
+    adduser  -S free5gc -G free5gc
+
+WORKDIR /free5gc
+
+# NFs expect cert/ and config/ relative to their working directory
+RUN mkdir -p config cert log
+
+USER free5gc
+
+# ─── NF runtime stages ───────────────────────────────────────────────────────
+
+FROM runtime-base AS nrf
+COPY --from=builder /out/nrf ./
+EXPOSE 8000
+CMD ["./nrf", "-c", "config/nrfcfg.yaml"]
+
+FROM runtime-base AS udr
+COPY --from=builder /out/udr ./
+EXPOSE 8000
+CMD ["./udr", "-c", "config/udrcfg.yaml"]
+
+FROM runtime-base AS udm
+COPY --from=builder /out/udm ./
+EXPOSE 8000
+CMD ["./udm", "-c", "config/udmcfg.yaml"]
+
+FROM runtime-base AS ausf
+COPY --from=builder /out/ausf ./
+EXPOSE 8000
+CMD ["./ausf", "-c", "config/ausfcfg.yaml"]
+
+FROM runtime-base AS nssf
+COPY --from=builder /out/nssf ./
+EXPOSE 8000
+CMD ["./nssf", "-c", "config/nssfcfg.yaml"]
+
+FROM runtime-base AS pcf
+COPY --from=builder /out/pcf ./
+EXPOSE 8000
+CMD ["./pcf", "-c", "config/pcfcfg.yaml"]
+
+FROM runtime-base AS amf
+COPY --from=builder /out/amf ./
+EXPOSE 8000 38412/sctp
+CMD ["./amf", "-c", "config/amfcfg.yaml"]
+
+FROM runtime-base AS smf
+COPY --from=builder /out/smf ./
+EXPOSE 8000
+CMD ["./smf", "-c", "config/smfcfg.yaml"]
+
+FROM runtime-base AS nef
+COPY --from=builder /out/nef ./
+EXPOSE 8000
+CMD ["./nef", "-c", "config/nefcfg.yaml"]
+
+FROM runtime-base AS webui
+COPY --from=webconsole-builder /out/webconsole ./
+# React static assets served by the Go backend
+COPY --from=web-frontend /webconsole/frontend/build ./public/
+EXPOSE 5000
+CMD ["./webconsole", "-c", "config/webuicfg.yaml"]
